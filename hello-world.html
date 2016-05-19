@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<style>
+			canvas{
+				background-color:#000;
+				margin:0 auto;
+				display:block;
+			}
+		</style>
+	</head>
+	<body>
+		<canvas id="bubbles" width=1024 height=768></canvas>
+		<script>
+			var canvas = document.getElementById("bubbles");
+			var ctx = canvas.getContext("2d");
+			
+			
+			//Singleton GameManager
+			var GameManager = 
+			{
+				dt: 0,
+				lastupdate: Date.now(),
+				roundTotal: 30,
+				roundElapsed: 0.0,
+				bps: 15,
+				bubbles: [],
+				
+				init: function(evt)
+				{
+					console.log("initialising...");
+					setInterval(GameManager.tick, 30);
+					
+					for(var i = 0; i < GameManager.roundTotal*GameManager.bps; i++)
+					{
+						var bubble = new Bubble(Math.random()*canvas.width, Math.random()*canvas.height, 5+Math.random()*50, i/GameManager.bps, 2); 
+						GameManager.bubbles.push(bubble);
+					}
+					
+				},
+				
+				tick: function()
+				{
+					GameManager.update();
+					GameManager.render();
+				},
+				
+				update: function()
+				{
+					var now = Date.now();
+					GameManager.dt = (now - GameManager.lastupdate)/1000;
+					GameManager.lastupdate = now;
+					
+					GameManager.roundElapsed += GameManager.dt;
+					
+					for(var i = 0; i < GameManager.bubbles.length; i++)
+					{
+						var bubble = GameManager.bubbles[i];
+						
+						if(bubble.alive){
+							bubble.update(GameManager.dt);
+						}else if(GameManager.roundElapsed > bubble.delay)
+						{
+							bubble.alive = true;
+						}
+					}
+				},
+				
+				render: function()
+				{
+					ctx.clearRect(0,0,canvas.width, canvas.height);
+					for(var i = 0; i < GameManager.bubbles.length; i++)
+					{
+						var bubble = GameManager.bubbles[i];
+						bubble.render();
+					}
+				},
+				
+				remove: function(bubble)
+				{
+					var index = GameManager.bubbles.indexOf(bubble);
+					GameManager.bubbles.splice(index, 1);
+				}
+			}
+			
+			//Singleton Collision
+			var Collision = 
+			{
+				bubbleCollision: function(bubble, point)
+				{
+					
+				}
+			}
+			
+			//Bubble class
+			var Bubble = function(_x, _y, _r, _d, _l = 3)
+			{
+				console.log("Initialising bubble");
+				this.x = _x;
+				this.y = _y;
+				this.maxRadius = _r;
+				this.delay = _d;
+				this.lifespan = _l;
+				
+				this.age = 0.0;
+				this.radius = 0.0;
+				this.alive = false;
+			}
+			
+			Bubble.prototype.update = function(dt)
+			{
+				this.age += dt;
+				if(this.age >= this.lifespan)
+				{
+					this.kill();
+					return;
+				}
+				this.radius = this.maxRadius - Math.abs(this.age/(this.lifespan/2)-1) * this.maxRadius;
+			}
+			
+			Bubble.prototype.kill = function()
+			{
+				GameManager.remove(this);
+			}
+			
+			Bubble.prototype.render = function()
+			{
+				ctx.strokeStyle = "white";
+				ctx.fillStyle = "white";
+				ctx.beginPath();
+				ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2);
+				ctx.stroke();
+				ctx.fill();
+				ctx.closePath();
+			}
+			
+			window.addEventListener("load", GameManager.init);
+			
+		</script>
+	</body>
+</html>
