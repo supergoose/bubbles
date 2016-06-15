@@ -10,11 +10,40 @@
 		</style>
 	</head>
 	<body>
-		<canvas id="bubbles" width=1024 height=768></canvas>
-		<script>
+		<canvas id="bubbles" width=800 height=600></canvas>
+		<script type="text/javascript">
 			var canvas = document.getElementById("bubbles");
 			var ctx = canvas.getContext("2d");
 			
+			var UIManager =			
+			{
+				render: function()
+				{
+					var i = 0;
+					for(var x in ScoreManager.Scores)
+					{
+						i++;
+						UIManager.renderText(x + ": " + ScoreManager.Scores[x], 10, 10+(14*i));
+					}
+				},
+				
+				renderText: function(_txt, _x, _y)
+				{
+					ctx.fillStyle = "white";
+					ctx.font = "12px Courier New";
+					ctx.fillText(_txt, _x, _y);
+				}
+			}
+			
+			var ScoreManager = 
+			{
+				Colors: ["orange", "green", "yellow"],
+				Scores: [],
+				ColorClicked: function(_colId)
+				{
+					ScoreManager.Scores[ScoreManager.Colors[_colId]]++;
+				}
+			}
 			
 			//Singleton GameManager
 			var GameManager = 
@@ -23,17 +52,23 @@
 				lastupdate: Date.now(),
 				roundTotal: 30,
 				roundElapsed: 0.0,
-				bps: 15,
+				bps: 5,
 				bubbles: [],
 				
 				init: function(evt)
 				{
 					console.log("initialising...");
-					setInterval(GameManager.tick, 30);
+					
+					for(var c in ScoreManager.Colors)
+					{
+						ScoreManager.Scores[ScoreManager.Colors[c]] = 0;
+					}
+					
+					window.setInterval(GameManager.tick, 30);
 					
 					for(var i = 0; i < GameManager.roundTotal*GameManager.bps; i++)
 					{
-						var bubble = new Bubble(Math.random()*canvas.width, Math.random()*canvas.height, 5+Math.random()*50, i/GameManager.bps, 2); 
+						var bubble = new Bubble(Math.random()*canvas.width, Math.random()*canvas.height, 5+Math.random()*50, i/GameManager.bps, Math.floor(Math.random()*ScoreManager.Colors.length), 10); 
 						GameManager.bubbles.push(bubble);
 					}
 					
@@ -57,13 +92,10 @@
 					{
 						var bubble = GameManager.bubbles[i];
 						
-						if(bubble.alive){
-							bubble.update(GameManager.dt);
-						}else if(GameManager.roundElapsed > bubble.delay)
-						{
-							bubble.alive = true;
-						}
+						bubble.update(GameManager.dt);
 					}
+					
+					Collision.wipeClicks();
 				},
 				
 				render: function()
@@ -74,6 +106,8 @@
 						var bubble = GameManager.bubbles[i];
 						bubble.render();
 					}
+					
+					UIManager.render();
 				},
 				
 				remove: function(bubble)
@@ -86,14 +120,108 @@
 			//Singleton Collision
 			var Collision = 
 			{
-				bubbleCollision: function(bubble, point)
+				clicks: [],
+				addClick: function(point)
 				{
+					Collision.clicks.push(point);
+				},
+				bubbleCollision: function(bubble)
+				{
+					for(var i = 0; i < Collision.clicks.length; i++)
+					{
+						var click = Collision.clicks[i];
+						if(Math.sqrt((bubble.x - click.x)*(bubble.x - click.x) + (bubble.y - click.y)*(bubble.y - click.y)) < bubble.radius+5)
+						{
+							return true;
+						}
+					}
+					
+					var classA = function()
+					{
+						var i = 0;
+						this.x = 3;
+						
+						this.superFunc = new function()
+						{
+							return true;
+						}
+					};
+					
+					var instanceOfA = new classA();
+					var instanceOfA2 = new classA();
+					
+					return false;
+				},
+				wipeClicks: function()
+				{
+					Collision.clicks = [];
+				}
+			}
+			
+			window.addEventListener("click", clickHandler);
+			
+			function clickHandler(evt)
+			{
+				var rect = canvas.getBoundingClientRect();
+				var point = {x:evt.clientX - rect.left, y:evt.clientY - rect.top};
+				Collision.addClick(point);
+				console.log("Point: " + point.x);
+			}
+			
+			var BubbleState = function(_b)
+			{
+				this.on = false;
+				this.bubble = _b;
+				
+				this.updateFunction = function(dt){
 					
 				}
 			}
 			
+			BubbleState.prototype.setOn = function(o)
+			{
+				this.on = o;
+			}
+			
+			BubbleState.prototype.getOn = function()
+			{
+				return this.on;
+			}
+			
+			BubbleState.prototype.update = function(dt)
+			{
+				this.updateFunction.call(this.bubble, dt);
+			}
+			
+			var BubbleTransition = function(_s, _e)
+			{
+				this.start = _s;
+				this.end = _e;
+				
+				this.updateFunction = function(){
+					
+					
+				}
+				
+				this.fire = function()
+				{
+					if(this.start.getOn() === true)
+					{
+						this.start.setOn(false);
+						this.end.bubble.state = this.end;
+						this.end.setOn(true);
+					}
+					
+				}
+			}
+			
+			BubbleTransition.prototype.update = function(dt)
+			{
+				this.updateFunction.call(this, dt);
+			}
+			
 			//Bubble class
-			var Bubble = function(_x, _y, _r, _d, _l = 3)
+			var Bubble = function(_x, _y, _r, _d, _c, _l = 3)
 			{
 				console.log("Initialising bubble");
 				this.x = _x;
@@ -101,21 +229,142 @@
 				this.maxRadius = _r;
 				this.delay = _d;
 				this.lifespan = _l;
+				this.colorId = _c;
 				
 				this.age = 0.0;
+				this.popElapsed = 0.0;
+				this.popTotal = 0.3;
 				this.radius = 0.0;
 				this.alive = false;
+				
+				this.circlePops = []; 
+				this.popSpeed = 5;
+				
+				/* State Machine */
+				this.createState = function(_on, _func)
+				{
+					var aState = new BubbleState(this);
+					aState.setOn(_on);
+					aState.updateFunction = _func;
+					return aState;
+				};
+				
+				this.dormantState = this.createState(true, function(dt){
+					
+				})
+				
+				this.inflateState = this.createState(false, function(dt){
+					
+					this.age += dt;
+					this.radius = this.maxRadius * (this.age/this.lifespan); //- Math.abs(this.age/(this.lifespan/2)-1) * this.maxRadius;
+				})
+				
+				this.deadState = this.createState(false, function(dt) {
+				    
+				});
+				
+				this.popState = this.createState(false, function(dt) {
+				    console.log("Pop");
+				    this.popElapsed += dt;
+				    
+				    if(this.circlePops.length == 0)
+				    {
+				    	var numBits = Math.random()*4 + 4;
+				    	for(var i = 0; i < numBits; i++)
+				    	{
+				    		this.circlePops.push(Math.random()*Math.PI*2);
+				    	}
+				    }
+				});
+				
+				
+				
+				//Dormant --> Inflate
+				this.ditransition = new BubbleTransition(this.dormantState, this.inflateState);
+				//Inflate --> Dead
+				this.idietransition = new BubbleTransition(this.inflateState, this.deadState);
+				//Inflate --> Pop
+				this.ipoptransition = new BubbleTransition(this.inflateState, this.popState);
+				//Pop --> Dead
+				this.dptransition = new BubbleTransition(this.popState, this.deadState);
+
+				this.state = this.dormantState;
+				
+				this.stateMachine = function(dt)
+				{
+					if(this.dormantState.getOn())
+					{
+						if(GameManager.roundElapsed > this.delay)
+						{
+							this.ditransition.fire.call(this.ditransition);
+						}
+					}
+					
+					if(this.inflateState.getOn())
+					{
+						
+						if(this.radius < 0)
+						{
+							console.log("Transitioning to die");
+							this.idietransition.fire.call(this.idietransition);
+						}
+						
+						if(Collision.bubbleCollision(this))
+						{
+							ScoreManager.ColorClicked(this.colorId);
+							this.ipoptransition.fire.call(this.ipoptransition);
+						}
+
+					}
+					
+					if(this.popState.getOn())
+					{
+						if(this.popElapsed > this.popTotal || this.radius < 0)
+					    {
+					    	this.dptransition.fire.call(this.dptransition);
+					    }
+					}
+					
+					
+					
+					this.state.update(dt);
+				}
+				
+				this.renderBubble = function()
+				{
+					ctx.strokeStyle = ScoreManager.Colors[this.colorId];
+					ctx.fillStyle = ScoreManager.Colors[this.colorId];
+					ctx.beginPath();
+					ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2);
+					ctx.stroke();
+					ctx.fill();
+					ctx.closePath();
+				}
+				
+				this.renderPop = function()
+				{
+					var alp = (1-this.popElapsed/this.popTotal);
+					ctx.fillStyle = ctx.strokeStyle =  "rgba(255, 255, 255, " + alp + ")";
+
+					for(var i = 0; i < this.circlePops.length; i++)
+					{
+						ctx.fillStyle = ScoreManager.Colors[this.colorId];
+						ctx.strokeStyle = ScoreManager.Colors[this.colorId];
+						ctx.beginPath();
+						//var opp = Math.sin(1-i*Math.PI/numBits)*this.popSpeed*(this.popElapsed/this.popTotal); //(i+0.5)*1/numBits*Math.PI*
+						ctx.arc(this.x + Math.sin(this.circlePops[i])*this.popSpeed*this.popElapsed/this.popTotal, this.y + this.popSpeed*Math.cos(this.circlePops[i])*this.popElapsed/this.popTotal, this.radius/4, 0, Math.PI*2);
+						ctx.stroke();
+						ctx.fill();
+						ctx.closePath();
+					}
+					
+					
+				}
 			}
 			
 			Bubble.prototype.update = function(dt)
 			{
-				this.age += dt;
-				if(this.age >= this.lifespan)
-				{
-					this.kill();
-					return;
-				}
-				this.radius = this.maxRadius - Math.abs(this.age/(this.lifespan/2)-1) * this.maxRadius;
+				this.stateMachine(dt);
 			}
 			
 			Bubble.prototype.kill = function()
@@ -125,16 +374,19 @@
 			
 			Bubble.prototype.render = function()
 			{
-				ctx.strokeStyle = "white";
-				ctx.fillStyle = "white";
-				ctx.beginPath();
-				ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2);
-				ctx.stroke();
-				ctx.fill();
-				ctx.closePath();
+				if(this.radius < 0)return;
+				
+				if(this.state===this.inflateState)
+				{
+					this.renderBubble();
+				}else if(this.state===this.popState)
+				{
+					this.renderPop();
+				}
 			}
 			
 			window.addEventListener("load", GameManager.init);
+			UIManager.renderText("LOADING...", 10, 10);
 			
 		</script>
 	</body>
